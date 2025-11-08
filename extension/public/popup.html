@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAN Study Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <h1>DAN</h1>
+      <p class="tagline">Strava for Studying</p>
+    </div>
+
+    <div class="session-info">
+      <div class="status-row">
+        <span class="label">Status:</span>
+        <span id="status" class="status-inactive">No active session</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Topic:</span>
+        <span id="topic">-</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Duration:</span>
+        <span id="duration">0:00</span>
+      </div>
+    </div>
+
+    <div class="manual-session">
+      <input 
+        type="text" 
+        id="manualTopic" 
+        placeholder="Enter study topic..."
+        maxlength="100"
+      />
+      <button id="startBtn" class="btn btn-primary">Start Session</button>
+      <button id="stopBtn" class="btn btn-danger" style="display: none;">Stop Session</button>
+    </div>
+
+    <div class="actions">
+      <button id="dashboardBtn" class="btn btn-secondary">Open Dashboard</button>
+    </div>
+
+    <div class="footer">
+      <p>Automatic tracking active for study websites</p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
