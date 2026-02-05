@@ -48,3 +48,18 @@ logs/
 dist/
 build/
 *.egg-info/
+
+# ML Models - large files should not be committed
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.h5
+*.pkl
+*.ckpt
+# Keep config files but exclude large model weights
+ml_models/*/model.safetensors
+ml_models/*/*.safetensors
+ml_models/*/*.bin
+ml_models/*/*.pt
+ml_models/*/*.pth
