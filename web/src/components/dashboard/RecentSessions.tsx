@@ -1,22 +1,45 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSessions } from '@/hooks/useSessions';
 import { formatDuration, getRelativeTime } from '@dan/shared';
-import type { StudySession } from '@dan/shared';
 
 interface RecentSessionsProps {
   userId: string;
 }
 
 export default function RecentSessions({ userId }: RecentSessionsProps) {
-  const [sessions, setSessions] = useState<StudySession[]>([]);
+  const { sessions, loading, error } = useSessions({ limit: 5 });
+  
+  // Filter sessions to show only recent ones (last 7 days)
+  const recentSessions = sessions.filter(s => {
+    const daysAgo = (Date.now() - s.startTime.getTime()) / (1000 * 60 * 60 * 24);
+    return daysAgo <= 7;
+  });
 
-  useEffect(() => {
-    // Fetch recent sessions from Firestore
-    // Placeholder for now
-  }, [userId]);
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl shadow-md p-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Sessions</h3>
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <p className="text-gray-600 mt-4">Loading sessions...</p>
+        </div>
+      </div>
+    );
+  }
 
-  if (sessions.length === 0) {
+  if (error) {
+    return (
+      <div className="bg-white rounded-2xl shadow-md p-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Sessions</h3>
+        <div className="text-center py-8">
+          <p className="text-red-600">Error loading sessions: {error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (recentSessions.length === 0 && !loading) {
     return (
       <div className="bg-white rounded-2xl shadow-md p-8">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Sessions</h3>
@@ -38,7 +61,7 @@ export default function RecentSessions({ userId }: RecentSessionsProps) {
       </div>
 
       <div className="space-y-4">
-        {sessions.map((session) => (
+        {recentSessions.map((session) => (
           <div
             key={session.id}
             className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-primary-300 transition-colors"

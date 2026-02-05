@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CREDENTIALS_PATH=/app/service-account.json
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4}
+      - ML_MODELS_PATH=/app/ml_models
+      - ML_THREAD_POOL_SIZE=4
+    volumes:
+      - ./service-account.json:/app/service-account.json:ro
+      - ./ml_models:/app/ml_models:ro
+    depends_on:
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  celery-ml:
+    build: .
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - ML_MODELS_PATH=/app/ml_models
+      - ML_THREAD_POOL_SIZE=4
+    volumes:
+      - ./ml_models:/app/ml_models:ro
+    depends_on:
+      - redis
+    command: celery -A celery_worker.celery_app worker --loglevel=info --queues=ml --concurrency=2
+
+  celery-ai:
+    build: .
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4}
+    depends_on:
+      - redis
+    command: celery -A celery_worker.celery_app worker --loglevel=info --queues=ai --concurrency=4
+
+  celery-stats:
+    build: .
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: celery -A celery_worker.celery_app worker --loglevel=info --queues=stats --concurrency=2
+
+  celery-beat:
+    build: .
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: celery -A celery_worker.celery_app beat --loglevel=info
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

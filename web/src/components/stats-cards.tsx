@@ -1,44 +1,61 @@
-import { TrendingUp, Clock, Flame, Target } from "lucide-react"
+'use client';
 
-const stats = [
-  {
-    label: "Current Streak",
-    value: "12",
-    unit: "days",
-    icon: Flame,
-    trend: "+2 from last week",
-    gradient: "from-[#c9f2c7] to-[#aceca1]",
-  },
-  {
-    label: "Study Time",
-    value: "24.5",
-    unit: "hours",
-    icon: Clock,
-    trend: "This week",
-    gradient: "from-[#aceca1] to-[#96be8c]",
-  },
-  {
-    label: "Sessions",
-    value: "38",
-    unit: "completed",
-    icon: Target,
-    trend: "+6 from last week",
-    gradient: "from-[#96be8c] to-[#629460]",
-  },
-  {
-    label: "Growth",
-    value: "+18%",
-    unit: "progress",
-    icon: TrendingUp,
-    trend: "Month over month",
-    gradient: "from-[#629460] to-[#243119]",
-  },
-]
+import { TrendingUp, Clock, Flame, Target } from "lucide-react"
+import { useSessionStats } from "@/hooks/useStats"
+import { useAuthContext } from "@/contexts/AuthContext"
 
 export function StatsCards() {
+  const { user } = useAuthContext();
+  const { stats, loading } = useSessionStats(7); // Last 7 days
+  const allTimeStats = useSessionStats(365); // All time for comparison
+
+  // Calculate growth (comparing last 7 days to previous 7 days)
+  const previousWeekStats = useSessionStats(14);
+  const currentWeekHours = stats?.total_hours || 0;
+  // Previous week = days 8-14 (subtract current week from 14-day total)
+  const previousWeekHours = (previousWeekStats.stats?.total_hours || 0) - currentWeekHours;
+  const growth = previousWeekHours > 0 
+    ? ((currentWeekHours - previousWeekHours) / previousWeekHours * 100).toFixed(0)
+    : currentWeekHours > 0 ? '100' : '0';
+
+  const statsData = [
+    {
+      label: "Current Streak",
+      value: loading ? "..." : (user?.streak?.toString() || "0"),
+      unit: "days",
+      icon: Flame,
+      trend: user?.streak ? `Keep it up!` : "Start your streak today",
+      gradient: "from-[#c9f2c7] to-[#aceca1]",
+    },
+    {
+      label: "Study Time",
+      value: loading ? "..." : (stats?.total_hours?.toFixed(1) || "0.0"),
+      unit: "hours",
+      icon: Clock,
+      trend: "This week",
+      gradient: "from-[#aceca1] to-[#96be8c]",
+    },
+    {
+      label: "Sessions",
+      value: loading ? "..." : (stats?.total_sessions?.toString() || "0"),
+      unit: "completed",
+      icon: Target,
+      trend: `This week`,
+      gradient: "from-[#96be8c] to-[#629460]",
+    },
+    {
+      label: "Growth",
+      value: loading ? "..." : `${growth > 0 ? '+' : ''}${growth}%`,
+      unit: "progress",
+      icon: TrendingUp,
+      trend: "Week over week",
+      gradient: "from-[#629460] to-[#243119]",
+    },
+  ];
+
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {stats.map((stat) => {
+      {statsData.map((stat) => {
         const Icon = stat.icon
         return (
           <div

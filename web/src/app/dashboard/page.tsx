@@ -54,7 +54,7 @@ export default function Dashboard() {
           {/* Main Content - 2 columns */}
           <div className="lg:col-span-2 space-y-6">
             <GrowthChart />
-            <RecentSessions />
+            <RecentSessions userId={user.id} />
           </div>
 
           {/* Sidebar - 1 column */}

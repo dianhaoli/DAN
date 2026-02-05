@@ -3,6 +3,7 @@ export interface User {
   email: string;
   displayName: string;
   photoURL?: string;
+  username?: string;
   createdAt: Date;
   updatedAt: Date;
   
@@ -20,6 +21,10 @@ export interface User {
   // Social
   friends: string[]; // user IDs
   isPublic: boolean;
+  friendRequests?: {
+    incoming: string[];
+    outgoing: string[];
+  };
 }
 
 export interface UserStats {

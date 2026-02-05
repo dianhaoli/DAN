@@ -1,0 +1,128 @@
+# Render deployment configuration
+# See: https://render.com/docs/blueprint-spec
+
+services:
+  # FastAPI Web Service
+  - type: web
+    name: dan-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dan-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: dan-redis
+          property: connectionString
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4
+      - key: ML_MODELS_PATH
+        value: /app/ml_models
+      - key: ENVIRONMENT
+        value: production
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+  # Celery Worker for ML tasks
+  - type: worker
+    name: dan-ml-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A celery_worker.celery_app worker --loglevel=info --queues=ml --concurrency=2
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dan-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: dan-redis
+          property: connectionString
+      - key: ML_MODELS_PATH
+        value: /app/ml_models
+    autoDeploy: true
+
+  # Celery Worker for AI tasks
+  - type: worker
+    name: dan-ai-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A celery_worker.celery_app worker --loglevel=info --queues=ai --concurrency=4
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dan-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: dan-redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4
+    autoDeploy: true
+
+  # Celery Worker for Stats tasks
+  - type: worker
+    name: dan-stats-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A celery_worker.celery_app worker --loglevel=info --queues=stats --concurrency=2
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dan-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: dan-redis
+          property: connectionString
+    autoDeploy: true
+
+  # Celery Beat (scheduler)
+  - type: worker
+    name: dan-celery-beat
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A celery_worker.celery_app beat --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dan-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: dan-redis
+          property: connectionString
+    autoDeploy: true
+
+  # Redis
+  - type: redis
+    name: dan-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+
+databases:
+  # Note: For Supabase, use external database URL instead
+  # This is for Render-managed PostgreSQL
+  - name: dan-db
+    plan: starter
+    databaseName: dan
+    user: dan

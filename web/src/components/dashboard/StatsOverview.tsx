@@ -1,60 +1,48 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { formatDuration } from '@dan/shared';
+import { useSessionStats } from '@/hooks/useStats';
 
 interface StatsOverviewProps {
   userId: string;
 }
 
-interface Stats {
-  totalHours: number;
-  totalSessions: number;
-  averageFocusScore: number;
-  weeklyHours: number;
-}
-
 export default function StatsOverview({ userId }: StatsOverviewProps) {
-  const [stats, setStats] = useState<Stats>({
-    totalHours: 0,
-    totalSessions: 0,
-    averageFocusScore: 0,
-    weeklyHours: 0,
-  });
-
-  useEffect(() => {
-    // Fetch stats from Firestore
-    // Placeholder for now
-    setStats({
-      totalHours: 42.5,
-      totalSessions: 87,
-      averageFocusScore: 0.85,
-      weeklyHours: 8.3,
-    });
-  }, [userId]);
+  const { stats, loading, error } = useSessionStats(7); // Last 7 days
+  const weeklyStats = useSessionStats(7);
+  
+  // Calculate weekly hours from weekly stats
+  const weeklyHours = weeklyStats.stats?.total_hours || 0;
+  
+  // Use stats from API or defaults
+  const displayStats = {
+    totalHours: stats?.total_hours || 0,
+    totalSessions: stats?.total_sessions || 0,
+    averageFocusScore: stats?.avg_focus_score || 0,
+    weeklyHours: weeklyHours,
+  };
 
   const statCards = [
     {
       label: 'Total Study Time',
-      value: `${stats.totalHours.toFixed(1)}h`,
+      value: loading ? '...' : `${displayStats.totalHours.toFixed(1)}h`,
       icon: '⏱️',
       color: 'from-blue-500 to-cyan-500',
     },
     {
       label: 'Sessions Completed',
-      value: stats.totalSessions,
+      value: loading ? '...' : displayStats.totalSessions.toString(),
       icon: '✅',
       color: 'from-green-500 to-emerald-500',
     },
     {
       label: 'Average Focus',
-      value: `${Math.round(stats.averageFocusScore * 100)}%`,
+      value: loading ? '...' : `${Math.round(displayStats.averageFocusScore * 100)}%`,
       icon: '🎯',
       color: 'from-purple-500 to-pink-500',
     },
     {
       label: 'This Week',
-      value: `${stats.weeklyHours.toFixed(1)}h`,
+      value: loading ? '...' : `${displayStats.weeklyHours.toFixed(1)}h`,
       icon: '📅',
       color: 'from-amber-500 to-orange-500',
     },

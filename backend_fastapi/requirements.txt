@@ -1,0 +1,35 @@
+# Core
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic>=2.9.0  # Updated for Python 3.13 support
+pydantic-settings>=2.5.0  # Updated for Python 3.13 support
+email-validator>=2.0.0  # Required for email validation in Pydantic
+
+# Database
+sqlalchemy>=2.0.26  # Updated for Python 3.13 support
+psycopg2-binary>=2.9.10  # Updated for Python 3.13 support
+alembic==1.13.1
+
+# Background Jobs
+celery==5.3.6
+redis==5.0.1
+
+# Auth
+firebase-admin==6.3.0
+python-jose[cryptography]==3.3.0
+
+# ML
+transformers==4.36.2
+torch>=2.6.0  # Updated for Python 3.13 support
+xgboost==2.0.3
+numpy>=1.26.0  # Updated for Python 3.13 support
+scikit-learn>=1.5.0  # Updated for Python 3.13 support
+
+# AI
+openai==1.10.0
+
+# Utils
+python-dotenv==1.0.0
+structlog==24.1.0
+python-multipart==0.0.6
+httpx==0.26.0

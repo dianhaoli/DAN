@@ -18,9 +18,25 @@ export default function LandingPage() {
     try {
       await signInWithGoogle();
       toast.success('Welcome to Branch!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Sign in error:', error);
-      toast.error('Failed to sign in. Please try again.');
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to sign in. Please try again.';
+      
+      if (error?.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Sign-in popup was closed. Please try again.';
+      } else if (error?.code === 'auth/popup-blocked') {
+        errorMessage = 'Popup was blocked by your browser. Please allow popups for this site.';
+      } else if (error?.code === 'auth/unauthorized-domain') {
+        errorMessage = 'This domain is not authorized. Please contact support.';
+      } else if (error?.code === 'auth/invalid-api-key') {
+        errorMessage = 'Firebase configuration error. Please check your settings.';
+      } else if (error?.message) {
+        errorMessage = `Sign-in failed: ${error.message}`;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsSigningIn(false);
     }

@@ -7,6 +7,7 @@ import {
   calculateFocusScore,
   calculateXP
 } from '@dan/shared';
+import { BACKEND_URL } from '../config';
 
 interface SessionData {
   startTime: number;
@@ -149,19 +150,38 @@ export class SessionTracker {
   }
 
   async stopSession() {
-    if (!this.currentSession) return;
+    if (!this.currentSession) {
+      console.log('[SessionTracker] No active session to stop');
+      return;
+    }
 
     const now = Date.now();
     const duration = (now - this.currentSession.startTime) / 1000;
 
+    console.log('[SessionTracker] 🛑 Stopping session:', {
+      duration: Math.round(duration),
+      minRequired: MIN_SESSION_DURATION_SECONDS,
+      topic: this.currentSession.topic,
+    });
+
     // Only save sessions longer than minimum duration
     if (duration >= MIN_SESSION_DURATION_SECONDS) {
-      await this.saveSessionToBackend();
+      console.log('[SessionTracker] ✅ Duration meets minimum, will save session');
+      try {
+        await this.saveSessionToBackend();
+      } catch (error) {
+        console.error('[SessionTracker] ❌ Error saving session:', error);
+      }
+    } else {
+      console.log('[SessionTracker] ⏱️ Session too short, not saving (need at least', MIN_SESSION_DURATION_SECONDS, 'seconds)');
     }
 
+    // Always clear the session
     this.currentSession = null;
     await chrome.storage.local.remove('currentSession');
     this.notifySessionEnd();
+    
+    console.log('[SessionTracker] ✅ Session stopped and cleared');
   }
 
   private async saveSessionToBackend() {
@@ -170,6 +190,12 @@ export class SessionTracker {
     const now = Date.now();
     const duration = (now - this.currentSession.startTime) / 1000;
     const totalTime = this.currentSession.activeTime + this.currentSession.idleTime;
+
+    console.log('[SessionTracker] 🔄 Starting save process:', {
+      duration: Math.round(duration),
+      topic: this.currentSession.topic,
+      domains: Array.from(this.currentSession.domains),
+    });
 
     // Calculate focus score
     const focusScore = calculateFocusScore(
@@ -182,49 +208,99 @@ export class SessionTracker {
     const durationMinutes = duration / 60;
     const xpEarned = calculateXP(durationMinutes, focusScore);
 
-    // Get user ID from storage
-    const { userId } = await chrome.storage.local.get('userId');
+    // Get stored credentials
+    const { userId, authToken } = await chrome.storage.local.get(['userId', 'authToken']);
+    
+    console.log('[SessionTracker] Credentials check:', {
+      hasUserId: !!userId,
+      hasAuthToken: !!authToken,
+      userIdPreview: userId ? userId.substring(0, 8) + '...' : 'none',
+    });
+    
     if (!userId) {
-      console.error('No user ID found in storage');
+      console.error('[SessionTracker] ❌ No user ID found. User must log in via web app first.');
+      // Store for retry later
+      await this.storeForRetry({
+        startTime: this.currentSession.startTime,
+        endTime: now,
+        duration: Math.round(duration),
+        topic: this.currentSession.topic,
+        domains: Array.from(this.currentSession.domains),
+        focusScore,
+        tabSwitches: this.currentSession.tabSwitches,
+        activeTime: Math.round(this.currentSession.activeTime),
+        idleTime: Math.round(this.currentSession.idleTime),
+        xpEarned,
+        source: this.currentSession.source,
+      });
       return;
     }
 
-    // Prepare session data
+    // Prepare session data for FastAPI
     const sessionData = {
-      userId,
-      startTime: new Date(this.currentSession.startTime).toISOString(),
-      endTime: new Date(now).toISOString(),
+      start_time: new Date(this.currentSession.startTime).toISOString(),
+      end_time: new Date(now).toISOString(),
       duration: Math.round(duration),
       topic: this.currentSession.topic,
       domains: Array.from(this.currentSession.domains),
-      focusScore,
-      tabSwitches: this.currentSession.tabSwitches,
-      activeTime: Math.round(this.currentSession.activeTime),
-      idleTime: Math.round(this.currentSession.idleTime),
-      xpEarned,
+      title: this.currentSession.topic,
+      tab_switches: this.currentSession.tabSwitches,
+      active_time: Math.round(this.currentSession.activeTime),
+      idle_time: Math.round(this.currentSession.idleTime),
+      clicks: 0,
+      keystrokes: 0,
       source: this.currentSession.source,
       platform: 'chrome-extension',
     };
 
-    // Send to backend
+    if (!authToken) {
+      console.error('[SessionTracker] ❌ No auth token found. User must log in via web app first.');
+      console.log('[SessionTracker] 💡 Open localhost:3000 and make sure you are logged in.');
+      await this.storeForRetry(sessionData);
+      return;
+    }
+
+    // Save via FastAPI backend
     try {
-      const backendUrl = 'http://localhost:5001/dann-91ae4/us-central1/api';
-      const response = await fetch(`${backendUrl}/sessions`, {
+      console.log('[SessionTracker] 📤 POSTing to FastAPI backend:', BACKEND_URL + '/sessions');
+      const response = await fetch(`${BACKEND_URL}/sessions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
         },
         body: JSON.stringify(sessionData),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to save session');
-      }
+      console.log('[SessionTracker] Response status:', response.status);
 
-      console.log('Session saved successfully');
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[SessionTracker] ✅ Session saved successfully!', {
+          sessionId: result.id || result.sessionId,
+          userId,
+          duration: Math.round(duration),
+          topic: this.currentSession.topic,
+        });
+        
+        await chrome.storage.local.remove('pendingSessions');
+        return;
+      } else {
+        const errorText = await response.text();
+        console.error('[SessionTracker] ❌ FastAPI backend error:', {
+          status: response.status,
+          error: errorText,
+        });
+        
+        // If token is expired (401), mark it for refresh
+        if (response.status === 401) {
+          console.error('[SessionTracker] 🔑 Auth token may be expired. Open web app to refresh.');
+        }
+        
+        await this.storeForRetry(sessionData);
+      }
     } catch (error) {
-      console.error('Error saving session:', error);
-      // Store for retry later
+      console.error('[SessionTracker] ❌ Network error saving session:', error);
       await this.storeForRetry(sessionData);
     }
   }
@@ -236,11 +312,21 @@ export class SessionTracker {
   }
 
   private notifySessionStart() {
-    chrome.runtime.sendMessage({ type: 'SESSION_STARTED' });
+    chrome.runtime.sendMessage({ type: 'SESSION_STARTED' }, (response) => {
+      // Ignore errors - it's okay if no listeners are present
+      if (chrome.runtime.lastError) {
+        // Popup might not be open, that's fine
+      }
+    });
   }
 
   private notifySessionEnd() {
-    chrome.runtime.sendMessage({ type: 'SESSION_ENDED' });
+    chrome.runtime.sendMessage({ type: 'SESSION_ENDED' }, (response) => {
+      // Ignore errors - it's okay if no listeners are present
+      if (chrome.runtime.lastError) {
+        // Popup might not be open, that's fine
+      }
+    });
   }
 
   getSessionStatus() {

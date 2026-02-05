@@ -25,6 +25,7 @@ out/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+*-firebase-adminsdk-*.json
 
 # IDEs
 .vscode/
@@ -49,3 +50,17 @@ extension/*.zip
 temp/
 tmp/
 
+# Python (root level)
+__pycache__/
+*.py[cod]
+venv/
+env/
+ENV/
+.venv
+
+# Celery
+celerybeat-schedule*
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+
+.vercel

@@ -6,17 +6,21 @@ DAN is a full-stack productivity tracking application with three main components
 
 1. **Web Application** (Next.js)
 2. **Browser Extension** (Chrome Manifest v3)
-3. **Backend** (Firebase)
+3. **Backend** (FastAPI + PostgreSQL)
 
 ## Data Flow
 
 ```
-[Browser Extension] → [Firebase Functions] → [Firestore Database] → [Web App]
+[Browser Extension] → [FastAPI Backend] → [PostgreSQL Database] → [Web App]
                               ↓
                       [OpenAI GPT API]
                               ↓
                       [AI Summaries & Insights]
+                              ↓
+                      [Celery Workers] (ML, AI, Stats)
 ```
+
+**Authentication**: Firebase Auth (used by both frontend and backend)
 
 ## Component Architecture
 
@@ -81,33 +85,33 @@ web/
 - Firestore real-time listeners
 - Responsive design (mobile-first)
 
-### 3. Backend (Firebase)
+### 3. Backend (FastAPI)
 
-**Technology**: Firebase Functions, Firestore, TypeScript
+**Technology**: FastAPI, PostgreSQL, Python, Celery, Redis
 
-**Cloud Functions**:
+**API Endpoints** (`backend_fastapi/app/api/`):
+- `auth.py` - Authentication (Firebase token verification)
+- `sessions.py` - Session CRUD operations
+- `users.py` - User management
+- `todos.py` - Todo/task management
+- `social.py` - Friends, activities, feed
+- `leaderboards.py` - Rankings and leaderboards
+- `ai.py` - AI summaries and insights
+- `gamification.py` - XP, levels, badges
 
-1. **Express API** (`api`)
-   - HTTP endpoint for session creation
-   - Receives data from extension
+**Background Workers** (`backend_fastapi/app/workers/`):
+- `ml_tasks.py` - ML inference (DistilBERT + XGBoost)
+- `ai_tasks.py` - OpenAI API calls (async)
+- `stats_tasks.py` - Statistics calculations
 
-2. **Firestore Triggers**
-   - `onSessionCreate` - Update user stats, check badges, create activities
-   
-3. **Scheduled Functions**
-   - `updateLeaderboardsDaily` - Refresh leaderboards
-   - `generateWeeklySummaries` - AI summaries every Sunday
+**Database**: PostgreSQL (Supabase recommended)
+- SQLAlchemy ORM
+- Alembic migrations
+- Auto-creates users on first Firebase auth
 
-4. **Callable Functions**
-   - `addFriend` - Friend management
-   - `removeFriend` - Remove friend
-
-**Handlers**:
-- `sessions.ts` - Session creation
-- `ai.ts` - OpenAI integration for summaries
-- `gamification.ts` - XP, levels, badges
-- `leaderboards.ts` - Ranking calculations
-- `weeklySummary.ts` - Weekly digest generation
+**Authentication**: 
+- Firebase Admin SDK verifies tokens
+- Auto-creates users in PostgreSQL from Firebase UID
 
 ### 4. Shared Package
 
@@ -120,170 +124,124 @@ web/
 - Constants (XP rates, badge definitions, study domains)
 - Utility functions (XP calculation, level progression, formatting)
 
-## Database Schema (Firestore)
+## Database Schema (PostgreSQL)
 
-### Collections
+### Tables
 
 **users**
-```typescript
-{
-  id: string (document ID = auth UID)
-  email: string
-  displayName: string
-  photoURL: string
-  xp: number
-  level: number
-  streak: number
-  longestStreak: number
-  totalStudyTime: number
-  friends: string[]
-  isPublic: boolean
-  createdAt: Timestamp
-  updatedAt: Timestamp
-}
-```
+- `id` (UUID, primary key)
+- `firebase_uid` (string, unique, indexed)
+- `email` (string)
+- `display_name` (string, nullable)
+- `photo_url` (string, nullable)
+- `xp` (integer, default 0)
+- `level` (integer, default 1)
+- `streak` (integer, default 0)
+- `longest_streak` (integer, default 0)
+- `total_study_time` (integer, seconds, default 0)
+- `is_public` (boolean, default true)
+- `created_at` (timestamp)
+- `updated_at` (timestamp)
 
 **sessions**
-```typescript
-{
-  id: string (auto-generated)
-  userId: string
-  startTime: Timestamp
-  endTime: Timestamp
-  duration: number (seconds)
-  topic: string
-  domains: string[]
-  focusScore: number (0-1)
-  productivityScore: number (0-100)
-  tabSwitches: number
-  activeTime: number
-  idleTime: number
-  xpEarned: number
-  aiSummary: string
-  topics: string[]
-  source: 'extension' | 'manual'
-  platform: string
-}
-```
-
-**userStats**
-```typescript
-{
-  userId: string (document ID)
-  totalSessions: number
-  totalHours: number
-  averageFocusScore: number
-  averageProductivityScore: number
-  topicDistribution: { [topic: string]: number }
-  studyHeatmap: { [date: string]: number }
-  weeklyTrend: number[]
-}
-```
-
-**badges**
-```typescript
-{
-  id: string
-  name: string
-  description: string
-  icon: string
-  requirement: string
-  rarity: 'common' | 'rare' | 'epic' | 'legendary'
-}
-```
-
-**userBadges**
-```typescript
-{
-  userId: string
-  badgeId: string
-  earnedAt: Timestamp
-}
-```
-
-**activities**
-```typescript
-{
-  id: string
-  userId: string
-  userName: string
-  userPhoto: string
-  type: 'session_complete' | 'badge_earned' | 'level_up' | 'streak_milestone'
-  sessionId?: string
-  topic?: string
-  duration?: number
-  xpEarned?: number
-  badgeId?: string
-  badgeName?: string
-  newLevel?: number
-  timestamp: Timestamp
-  reactions: { [emoji: string]: string[] }
-}
-```
-
-**leaderboards**
-```typescript
-{
-  id: string
-  name: string
-  type: 'hours' | 'xp' | 'productivity' | 'streak'
-  period: 'daily' | 'weekly' | 'monthly' | 'all-time'
-  scope: 'global' | 'friends'
-  entries: LeaderboardEntry[]
-  updatedAt: Timestamp
-}
-```
+- `id` (UUID, primary key)
+- `user_id` (UUID, foreign key → users.id)
+- `start_time` (timestamp)
+- `end_time` (timestamp, nullable)
+- `duration` (integer, seconds)
+- `topic` (string, nullable)
+- `domains` (JSON array)
+- `focus_score` (float, 0-1)
+- `productivity_score` (float, 0-100)
+- `tab_switches` (integer)
+- `active_time` (integer, seconds)
+- `idle_time` (integer, seconds)
+- `xp_earned` (integer)
+- `ai_summary` (text, nullable)
+- `topics` (JSON array)
+- `source` (enum: 'extension' | 'manual')
+- `platform` (string)
+- `created_at` (timestamp)
 
 **todos**
-```typescript
-{
-  id: string
-  userId: string
-  title: string
-  description: string
-  estimatedMinutes: number
-  dueDate: Timestamp
-  status: 'pending' | 'in_progress' | 'completed'
-  priority: 'low' | 'medium' | 'high'
-  xpReward: number
-  linkedSessionId: string
-}
-```
+- `id` (UUID, primary key)
+- `user_id` (UUID, foreign key → users.id)
+- `title` (string)
+- `description` (text, nullable)
+- `estimated_minutes` (integer, nullable)
+- `due_date` (timestamp, nullable)
+- `scheduled_date` (timestamp, nullable)
+- `status` (enum: 'pending' | 'in_progress' | 'completed')
+- `priority` (enum: 'low' | 'medium' | 'high')
+- `category` (string, nullable)
+- `xp_reward` (integer, nullable)
+- `linked_session_id` (UUID, nullable, foreign key → sessions.id)
+- `created_at` (timestamp)
+- `updated_at` (timestamp)
 
-**weeklySummaries**
-```typescript
-{
-  id: string
-  userId: string
-  weekStart: Timestamp
-  weekEnd: Timestamp
-  totalHours: number
-  totalSessions: number
-  averageFocusScore: number
-  xpEarned: number
-  newBadges: string[]
-  streakAtEnd: number
-  topTopics: { topic: string, minutes: number }[]
-  aiSummary: string
-  improvements: string[]
-  suggestions: string[]
-}
-```
+**user_stats** (computed/denormalized)
+- `user_id` (UUID, primary key, foreign key → users.id)
+- `total_sessions` (integer)
+- `total_hours` (float)
+- `average_focus_score` (float)
+- `average_productivity_score` (float)
+- `topic_distribution` (JSON)
+- `study_heatmap` (JSON)
+- `weekly_trend` (JSON array)
+- `updated_at` (timestamp)
+
+**badges** (reference data)
+- `id` (UUID, primary key)
+- `name` (string)
+- `description` (text)
+- `icon` (string)
+- `requirement` (text)
+- `rarity` (enum: 'common' | 'rare' | 'epic' | 'legendary')
+
+**user_badges** (many-to-many)
+- `user_id` (UUID, foreign key → users.id)
+- `badge_id` (UUID, foreign key → badges.id)
+- `earned_at` (timestamp)
+- Primary key: (user_id, badge_id)
+
+**activities** (social feed)
+- `id` (UUID, primary key)
+- `user_id` (UUID, foreign key → users.id)
+- `type` (enum: 'session_complete' | 'badge_earned' | 'level_up' | 'streak_milestone')
+- `session_id` (UUID, nullable, foreign key → sessions.id)
+- `topic` (string, nullable)
+- `duration` (integer, nullable)
+- `xp_earned` (integer, nullable)
+- `badge_id` (UUID, nullable, foreign key → badges.id)
+- `new_level` (integer, nullable)
+- `reactions` (JSON)
+- `created_at` (timestamp)
+
+**leaderboards** (cached rankings)
+- `id` (UUID, primary key)
+- `name` (string)
+- `type` (enum: 'hours' | 'xp' | 'productivity' | 'streak')
+- `period` (enum: 'daily' | 'weekly' | 'monthly' | 'all-time')
+- `scope` (enum: 'global' | 'friends')
+- `entries` (JSON array)
+- `updated_at` (timestamp)
 
 ## Security
 
-### Firestore Rules
+### Database Access
 
+- All database access through FastAPI (no direct client access)
+- Row-level security enforced in API layer
 - Users can only read/write their own data
 - Friends can view each other's sessions (if public)
 - Badges and leaderboards: read-only (server-side writes only)
-- Activities: create own, read friends'
 
 ### Authentication
 
-- Firebase Auth with Google OAuth
-- JWT tokens for API requests
-- Secure HTTP-only cookies
+- Firebase Auth with Google OAuth (frontend)
+- Firebase Admin SDK verifies tokens (backend)
+- JWT tokens in Authorization header: `Bearer <firebase_id_token>`
+- Auto-creates users in PostgreSQL on first auth
 
 ### Extension Security
 
@@ -348,17 +306,22 @@ web/
 ### Web App
 - **Platform**: Vercel
 - **Build**: `next build`
-- **Environment**: Production env vars
+- **Environment**: `NEXT_PUBLIC_API_URL` set to production FastAPI URL
 
 ### Backend
-- **Platform**: Firebase
-- **Deploy**: `firebase deploy`
-- **Regions**: us-central1 (default)
+- **Platform**: Render, Railway, or any Python host
+- **Deploy**: 
+  - Set environment variables
+  - Run migrations: `alembic upgrade head`
+  - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **Workers**: Deploy Celery workers separately
+- **Database**: PostgreSQL (Supabase, Neon, or managed PostgreSQL)
 
 ### Extension
-- **Build**: Webpack bundle
+- **Build**: `npm run build` in `extension/` directory
 - **Platform**: Chrome Web Store
-- **Updates**: Automatic via store
+- **Config**: Update API URL in extension config
+- **Updates**: Manual rebuild and upload
 
 ## Performance Targets
 

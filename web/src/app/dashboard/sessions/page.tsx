@@ -2,43 +2,43 @@
 
 import { useAuthContext } from '@/contexts/AuthContext';
 import { Navbar } from '@/components/navbar';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { formatDuration, getRelativeTime, formatDate } from '@dan/shared';
+import { useSessions } from '@/hooks/useSessions';
 
 export default function SessionsPage() {
-  const { user } = useAuthContext();
+  const { user, loading: authLoading } = useAuthContext();
   const [filter, setFilter] = useState<'all' | 'week' | 'month'>('week');
 
-  // Mock data - would fetch from Firestore
-  const sessions = [
-    {
-      id: '1',
-      topic: 'Machine Learning Algorithms',
-      duration: 3600,
-      focusScore: 0.89,
-      xpEarned: 180,
-      startTime: new Date(Date.now() - 86400000),
-      aiSummary: 'Studied supervised learning algorithms including decision trees and random forests.',
-    },
-    {
-      id: '2',
-      topic: 'Linear Algebra',
-      duration: 2700,
-      focusScore: 0.92,
-      xpEarned: 162,
-      startTime: new Date(Date.now() - 172800000),
-      aiSummary: 'Reviewed matrix operations and eigenvalues.',
-    },
-    {
-      id: '3',
-      topic: 'Web Development',
-      duration: 5400,
-      focusScore: 0.85,
-      xpEarned: 270,
-      startTime: new Date(Date.now() - 259200000),
-      aiSummary: 'Built a responsive dashboard using React and TailwindCSS.',
-    },
-  ];
+  // Memoize date range to prevent unnecessary re-fetches
+  // Only recalculate when filter changes, not on every render
+  const dateRange = useMemo(() => {
+    if (filter === 'all') {
+      return undefined;
+    }
+    
+    const now = Date.now();
+    const days = filter === 'week' ? 7 : 30;
+    
+    return {
+      startDate: new Date(now - days * 24 * 60 * 60 * 1000),
+      endDate: new Date(now),
+    };
+  }, [filter]);
+  const { sessions, loading, error } = useSessions({
+    limit: 50,
+    startDate: dateRange?.startDate,
+    endDate: dateRange?.endDate,
+  });
+
+  // Wait for auth to finish loading before rendering
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (!user) return null;
 
@@ -75,19 +75,21 @@ export default function SessionsPage() {
           <div className="rounded-2xl bg-card border border-border/40 p-6">
             <div className="text-sm text-muted-foreground mb-2">Total Study Time</div>
             <div className="text-3xl font-semibold text-foreground">
-              {formatDuration(sessions.reduce((sum, s) => sum + s.duration / 60, 0))}
+              {loading ? '...' : formatDuration(sessions.reduce((sum, s) => sum + s.duration / 60, 0))}
             </div>
           </div>
           <div className="rounded-2xl bg-card border border-border/40 p-6">
             <div className="text-sm text-muted-foreground mb-2">Average Focus</div>
             <div className="text-3xl font-semibold text-foreground">
-              {Math.round((sessions.reduce((sum, s) => sum + s.focusScore, 0) / sessions.length) * 100)}%
+              {loading ? '...' : sessions.length > 0 
+                ? `${Math.round((sessions.reduce((sum, s) => sum + (s.focusScore || 0), 0) / sessions.length) * 100)}%`
+                : '0%'}
             </div>
           </div>
           <div className="rounded-2xl bg-card border border-border/40 p-6">
             <div className="text-sm text-muted-foreground mb-2">Total XP Earned</div>
             <div className="text-3xl font-semibold text-foreground">
-              {sessions.reduce((sum, s) => sum + s.xpEarned, 0)} XP
+              {loading ? '...' : sessions.reduce((sum, s) => sum + (s.xpEarned || 0), 0)} XP
             </div>
           </div>
         </div>
@@ -98,8 +100,29 @@ export default function SessionsPage() {
             <h3 className="text-lg font-semibold text-foreground">Session History</h3>
           </div>
 
-          <div className="divide-y divide-border/40">
-            {sessions.map((session) => (
+          {loading && (
+            <div className="p-12 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="text-muted-foreground mt-4">Loading sessions...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-12 text-center">
+              <p className="text-red-600">Error loading sessions: {error.message}</p>
+            </div>
+          )}
+
+          {!loading && !error && sessions.length === 0 && (
+            <div className="p-12 text-center">
+              <div className="text-4xl mb-4">📚</div>
+              <p className="text-muted-foreground">No sessions found for this period.</p>
+            </div>
+          )}
+
+          {!loading && !error && sessions.length > 0 && (
+            <div className="divide-y divide-border/40">
+              {sessions.map((session) => (
               <div key={session.id} className="p-6 hover:bg-accent/30 transition-colors">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
@@ -145,8 +168,9 @@ export default function SessionsPage() {
                   </div>
                 )}
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>

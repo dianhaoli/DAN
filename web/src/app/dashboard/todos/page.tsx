@@ -4,71 +4,65 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { useState } from 'react';
 import type { Todo } from '@dan/shared';
 import { Navbar } from '@/components/navbar';
-import { Clock } from 'lucide-react';
+import { Clock, Trash2 } from 'lucide-react';
+import { useTodos } from '@/hooks/useTodos';
+import toast from 'react-hot-toast';
 
 export default function TodosPage() {
   const { user } = useAuthContext();
+  const { todos, loading, addTodo, updateTodo, deleteTodo } = useTodos(user?.id || null);
   const [newTodo, setNewTodo] = useState('');
-  const [todos, setTodos] = useState<Todo[]>([
-    {
-      id: '1',
-      userId: user?.id || '',
-      title: 'Review Python data structures',
-      estimatedMinutes: 30,
-      status: 'pending',
-      priority: 'high',
-      xpReward: 50,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '2',
-      userId: user?.id || '',
-      title: 'Complete calculus problem set',
-      estimatedMinutes: 60,
-      status: 'in_progress',
-      priority: 'medium',
-      xpReward: 100,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ]);
+  const [isAdding, setIsAdding] = useState(false);
 
-  const handleAddTodo = () => {
-    if (!newTodo.trim()) return;
+  const handleAddTodo = async () => {
+    if (!newTodo.trim() || !user) return;
 
-    const todo: Todo = {
-      id: Date.now().toString(),
-      userId: user?.id || '',
-      title: newTodo,
-      status: 'pending',
-      priority: 'medium',
-      xpReward: 25,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    setTodos([...todos, todo]);
-    setNewTodo('');
+    setIsAdding(true);
+    try {
+      await addTodo({
+        userId: user.id,
+        title: newTodo.trim(),
+        priority: 'medium',
+      });
+      setNewTodo('');
+      toast.success('Todo added!');
+    } catch (error: any) {
+      console.error('Error adding todo:', error);
+      const errorMessage = error?.message || 'Failed to add todo. Please try again.';
+      toast.error(errorMessage);
+    } finally {
+      setIsAdding(false);
+    }
   };
 
-  const toggleTodo = (id: string) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id
-          ? {
-              ...todo,
-              status: todo.status === 'completed' ? 'pending' : 'completed',
-              completedAt: todo.status === 'completed' ? undefined : new Date(),
-            }
-          : todo
-      )
-    );
+  const toggleTodo = async (id: string, currentStatus: string) => {
+    try {
+      await updateTodo(id, {
+        status: currentStatus === 'completed' ? 'pending' : 'completed',
+        completedAt: currentStatus === 'completed' ? undefined : new Date(),
+      });
+      toast.success(currentStatus === 'completed' ? 'Todo marked as pending' : 'Todo completed!');
+    } catch (error) {
+      console.error('Error updating todo:', error);
+      toast.error('Failed to update todo. Please try again.');
+    }
+  };
+
+  const handleDeleteTodo = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this todo?')) return;
+
+    try {
+      await deleteTodo(id);
+      toast.success('Todo deleted');
+    } catch (error) {
+      console.error('Error deleting todo:', error);
+      toast.error('Failed to delete todo. Please try again.');
+    }
   };
 
   if (!user) return null;
 
-  const pendingTodos = todos.filter((t) => t.status !== 'completed');
+  const pendingTodos = todos.filter((t) => t.status !== 'completed' && t.status !== 'cancelled');
   const completedTodos = todos.filter((t) => t.status === 'completed');
 
   return (
@@ -87,38 +81,57 @@ export default function TodosPage() {
               type="text"
               value={newTodo}
               onChange={(e) => setNewTodo(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleAddTodo()}
+              onKeyPress={(e) => e.key === 'Enter' && !isAdding && handleAddTodo()}
               placeholder="What do you want to study?"
-              className="flex-1 px-4 py-3 border border-input rounded-xl focus:outline-none focus:ring-1 focus:ring-ring bg-background text-foreground"
+              disabled={isAdding}
+              className="flex-1 px-4 py-3 border border-input rounded-xl focus:outline-none focus:ring-1 focus:ring-ring bg-background text-foreground disabled:opacity-50"
             />
             <button
               onClick={handleAddTodo}
-              className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors"
+              disabled={isAdding}
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add
+              {isAdding ? 'Adding...' : 'Add'}
             </button>
           </div>
         </div>
 
-        {/* Pending Todos */}
-        {pendingTodos.length > 0 && (
+        {/* Loading State */}
+        {loading && (
           <div className="rounded-2xl bg-card border border-border/40 p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">To Do</h3>
+            <div className="text-center py-8 text-muted-foreground">Loading todos...</div>
+          </div>
+        )}
+
+        {/* Pending Todos */}
+        {!loading && pendingTodos.length > 0 && (
+          <div className="rounded-2xl bg-card border border-border/40 p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4">To Do ({pendingTodos.length})</h3>
             <div className="space-y-3">
               {pendingTodos.map((todo) => (
-                <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} />
+                <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={handleDeleteTodo} />
               ))}
             </div>
           </div>
         )}
 
-        {/* Completed Todos */}
-        {completedTodos.length > 0 && (
+        {/* Empty State */}
+        {!loading && pendingTodos.length === 0 && completedTodos.length === 0 && (
           <div className="rounded-2xl bg-card border border-border/40 p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">Completed</h3>
+            <div className="text-center py-12">
+              <p className="text-muted-foreground mb-2">No todos yet</p>
+              <p className="text-sm text-muted-foreground">Add a todo above to get started!</p>
+            </div>
+          </div>
+        )}
+
+        {/* Completed Todos */}
+        {!loading && completedTodos.length > 0 && (
+          <div className="rounded-2xl bg-card border border-border/40 p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Completed ({completedTodos.length})</h3>
             <div className="space-y-3">
               {completedTodos.map((todo) => (
-                <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} />
+                <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} onDelete={handleDeleteTodo} />
               ))}
             </div>
           </div>
@@ -128,7 +141,15 @@ export default function TodosPage() {
   );
 }
 
-function TodoItem({ todo, onToggle }: { todo: Todo; onToggle: (id: string) => void }) {
+function TodoItem({ 
+  todo, 
+  onToggle, 
+  onDelete 
+}: { 
+  todo: Todo; 
+  onToggle: (id: string, status: string) => void;
+  onDelete: (id: string) => void;
+}) {
   const getPriorityColor = () => {
     switch (todo.priority) {
       case 'high':
@@ -147,8 +168,8 @@ function TodoItem({ todo, onToggle }: { todo: Todo; onToggle: (id: string) => vo
       }`}
     >
       <button
-        onClick={() => onToggle(todo.id)}
-        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+        onClick={() => onToggle(todo.id, todo.status)}
+        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors flex-shrink-0 ${
           todo.status === 'completed'
             ? 'bg-primary border-primary'
             : 'border-input hover:border-ring'
@@ -157,19 +178,32 @@ function TodoItem({ todo, onToggle }: { todo: Todo; onToggle: (id: string) => vo
         {todo.status === 'completed' && <span className="text-white text-sm">✓</span>}
       </button>
 
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <div className={`font-medium ${todo.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
           {todo.title}
         </div>
-        <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-          {todo.estimatedMinutes && <span className="inline-flex items-center gap-1"><Clock className="w-4 h-4" /> {todo.estimatedMinutes}min</span>}
+        <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+          {todo.estimatedMinutes && (
+            <span className="inline-flex items-center gap-1">
+              <Clock className="w-4 h-4" /> {todo.estimatedMinutes}min
+            </span>
+          )}
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPriorityColor()}`}>
             {todo.priority}
           </span>
         </div>
       </div>
 
-      <div className="text-sm font-medium text-primary-600">+{todo.xpReward} XP</div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="text-sm font-medium text-primary-600">+{todo.xpReward} XP</div>
+        <button
+          onClick={() => onDelete(todo.id)}
+          className="p-1.5 text-muted-foreground hover:text-destructive transition-colors rounded hover:bg-destructive/10"
+          aria-label="Delete todo"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 }

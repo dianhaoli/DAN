@@ -46,10 +46,11 @@ export function FriendManager() {
       const userDoc = await getDoc(doc(db, 'users', user.id));
       const userData = userDoc.data() as User;
 
-      // Load incoming requests
-      if (userData.friendRequests?.incoming?.length > 0) {
+      // Load incoming requests (defensive: fall back to empty array)
+      const incomingIds = userData.friendRequests?.incoming ?? [];
+      if (incomingIds.length > 0) {
         const incomingUsers = await Promise.all(
-          userData.friendRequests.incoming.map(async (userId) => {
+          incomingIds.map(async (userId) => {
             const userDoc = await getDoc(doc(db, 'users', userId));
             return { id: userDoc.id, ...userDoc.data() } as FriendRequestUser;
           })
@@ -58,9 +59,10 @@ export function FriendManager() {
       }
 
       // Load outgoing requests
-      if (userData.friendRequests?.outgoing?.length > 0) {
+      const outgoingIds = userData.friendRequests?.outgoing ?? [];
+      if (outgoingIds.length > 0) {
         const outgoingUsers = await Promise.all(
-          userData.friendRequests.outgoing.map(async (userId) => {
+          outgoingIds.map(async (userId) => {
             const userDoc = await getDoc(doc(db, 'users', userId));
             return { id: userDoc.id, ...userDoc.data() } as FriendRequestUser;
           })
@@ -69,9 +71,10 @@ export function FriendManager() {
       }
 
       // Load friends
-      if (userData.friends?.length > 0) {
+      const friendIds = userData.friends ?? [];
+      if (friendIds.length > 0) {
         const friendUsers = await Promise.all(
-          userData.friends.map(async (userId) => {
+          friendIds.map(async (userId) => {
             const userDoc = await getDoc(doc(db, 'users', userId));
             return { id: userDoc.id, ...userDoc.data() } as FriendRequestUser;
           })
@@ -365,7 +368,14 @@ export function FriendManager() {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => sendFriendRequest(result.username)}
+                      disabled={!result.username}
+                      onClick={() => {
+                        if (result.username) {
+                          sendFriendRequest(result.username);
+                        } else {
+                          toast.error('This user does not have a username set');
+                        }
+                      }}
                       className="bg-[#6fb168] hover:bg-[#5a9a54]"
                     >
                       <UserPlus className="w-4 h-4 mr-2" />

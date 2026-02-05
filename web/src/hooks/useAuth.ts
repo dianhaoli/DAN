@@ -50,6 +50,28 @@ export function useAuth() {
           
           setUser(newUser);
         }
+
+        // Sync credentials with extension (and set up periodic refresh)
+        try {
+          const { syncExtensionCredentials } = await import('@/lib/extensionSync');
+          await syncExtensionCredentials();
+        } catch (error) {
+          // Extension sync is optional, don't fail auth if it fails
+          console.log('Extension sync failed (optional):', error);
+        }
+        
+        // Also refresh token on page visibility change (when user returns to tab)
+        const handleVisibilityChange = async () => {
+          if (document.visibilityState === 'visible') {
+            try {
+              const { syncExtensionCredentials: refreshSync } = await import('@/lib/extensionSync');
+              await refreshSync();
+            } catch (e) {
+              // Silent fail
+            }
+          }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
       } else {
         setUser(null);
       }
@@ -78,12 +100,45 @@ export function useAuth() {
     }
   };
 
+  const checkUsernameAvailable = async (username: string): Promise<boolean> => {
+    const normalized = username.toLowerCase().trim();
+    if (!normalized) return false;
+    const usernameDoc = await getDoc(doc(db, 'usernames', normalized));
+    return !usernameDoc.exists();
+  };
+
+  const setUsername = async (username: string): Promise<void> => {
+    const normalized = username.toLowerCase().trim();
+    if (!firebaseUser) {
+      throw new Error('Not authenticated');
+    }
+    const isAvailable = await checkUsernameAvailable(normalized);
+    if (!isAvailable) {
+      throw new Error('Username already taken');
+    }
+    // Reserve username → userId mapping
+    await setDoc(doc(db, 'usernames', normalized), {
+      userId: firebaseUser.uid,
+      createdAt: serverTimestamp(),
+    });
+    // Update user document with username
+    await setDoc(
+      doc(db, 'users', firebaseUser.uid),
+      { username: normalized, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+    // Update local state timestamp (username not in type; keep type-safe)
+    setUser((prev) => (prev ? { ...prev, updatedAt: new Date() } : prev));
+  };
+
   return {
     user,
     firebaseUser,
     loading,
     signInWithGoogle,
     signOut,
+    setUsername,
+    checkUsernameAvailable,
   };
 }
 
